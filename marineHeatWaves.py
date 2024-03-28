@@ -12,7 +12,21 @@ from scipy import linalg
 from scipy import stats
 import scipy.ndimage as ndimage
 from datetime import date
+import pandas as pd
 
+
+def convert_orddates2datetime(ordinal_dates):
+        """
+        Converts a list of ordinal dates to a list of datetime objects 
+        """
+        return [datetime.datetime.fromordinal(t) for t in ordinal_dates]
+
+def convert_npdatetime2ordinal(time):
+        """
+        Converts a numpy date64 array  to a list of ordinal dates
+        """
+        dates = pd.to_datetime(time)
+        return np.array([t.toordinal() for t in dates])
 
 def detect(t, temp, climatologyPeriod=[None,None], pctile=90, windowHalfWidth=5, smoothPercentile=True, smoothPercentileWidth=31, minDuration=5, joinAcrossGaps=True, maxGap=2, maxPadLength=False, coldSpells=False, alternateClimatology=False, Ly=False):
     '''
@@ -25,6 +39,7 @@ def detect(t, temp, climatologyPeriod=[None,None], pctile=90, windowHalfWidth=5,
 
       t       Time vector, in datetime format (e.g., date(1982,1,1).toordinal())
               [1D numpy array of length T]
+              or alternatively  a numpy.array in numpy datetime64 format
       temp    Temperature vector [1D numpy array of length T]
 
     Outputs:
@@ -180,6 +195,11 @@ def detect(t, temp, climatologyPeriod=[None,None], pctile=90, windowHalfWidth=5,
     #
     # Time and dates vectors
     #
+
+    # check for datetime64 format
+    if isinstance(t[0], np.datetime64):
+        t = convert_npdatetime2ordinal(t)
+
 
     # Generate vectors for year, month, day-of-month, and day-of-year
     T = len(t)
