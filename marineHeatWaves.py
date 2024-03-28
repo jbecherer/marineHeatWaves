@@ -130,7 +130,9 @@ def detect(t, temp, climatologyPeriod=[None,None], pctile=90, windowHalfWidth=5,
                              threshold and seasonal climatology. Format is as a dictionary
                              with keys 'thresh' and 'seas' for the threshold and seasonal
                              climatology, respectively. Each should be a numpy.array of length 
-                             365 or 366. (DEFAULT = False)
+                             365 or 366. Alternatively it could have len(t), in which case it is 
+                             assumed that the climatology was calculated before with this function 
+                             and each year repeats. (DEFAULT = False) also set (smoothPercentile = False)
       Ly                     Specifies if the length of the year is < 365/366 days (e.g. a 
                              360 day year from a climate model). This affects the calculation
                              of the climatology. (DEFAULT = False)
@@ -291,6 +293,18 @@ def detect(t, temp, climatologyPeriod=[None,None], pctile=90, windowHalfWidth=5,
     
 
     if externalClimatology: # Use external climatology
+        smoothPercentile = False
+        Ndays = len(externalClimatology['thresh'])
+
+        if Ndays == len(t): # External climatology is for the full time series
+            if len(year[year==year[0]]) >= 365:
+                y = year[0]
+            else:
+                y = year[0] + 1
+            externalClimatology['thresh'] = externalClimatology['thresh'][year == y]
+            externalClimatology['seas'] = externalClimatology['seas'][year == y]
+
+
         Ndays = len(externalClimatology['thresh'])
         if Ndays ==366:
             thresh_climYear = externalClimatology['thresh']
