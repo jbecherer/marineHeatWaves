@@ -28,7 +28,7 @@ def convert_npdatetime2ordinal(time):
         dates = pd.to_datetime(time)
         return np.array([t.toordinal() for t in dates])
 
-def detect(t, temp, climatologyPeriod=[None,None], pctile=90, windowHalfWidth=5, smoothPercentile=True, smoothPercentileWidth=31, minDuration=5, joinAcrossGaps=True, maxGap=2, maxPadLength=False, coldSpells=False, alternateClimatology=False, Ly=False):
+def detect(t, temp, climatologyPeriod=[None,None], pctile=90, windowHalfWidth=5, smoothPercentile=True, smoothPercentileWidth=31, minDuration=5, joinAcrossGaps=True, maxGap=2, maxPadLength=False, coldSpells=False, alternateClimatology=False, externalClimatology=False, Ly=False):
     '''
 
     Applies the Hobday et al. (2016) marine heat wave definition to an input time
@@ -126,6 +126,11 @@ def detect(t, temp, climatologyPeriod=[None,None], pctile=90, windowHalfWidth=5,
                              [1D numpy array of length TClim] and (2) the second element of
                              the list is a temperature vector [1D numpy array of length TClim].
                              (DEFAULT = False)
+      externalClimatology    Provide an external climatology for the calculation of the
+                             threshold and seasonal climatology. Format is as a dictionary
+                             with keys 'thresh' and 'seas' for the threshold and seasonal
+                             climatology, respectively. Each should be a numpy.array of length 
+                             365 or 366. (DEFAULT = False)
       Ly                     Specifies if the length of the year is < 365/366 days (e.g. a 
                              360 day year from a climate model). This affects the calculation
                              of the climatology. (DEFAULT = False)
@@ -282,26 +287,46 @@ def detect(t, temp, climatologyPeriod=[None,None], pctile=90, windowHalfWidth=5,
     clim = {}
     clim['thresh'] = np.NaN*np.zeros(TClim)
     clim['seas'] = np.NaN*np.zeros(TClim)
-    # Loop over all day-of-year values, and calculate threshold and seasonal climatology across years
-    for d in range(1,lenClimYear+1):
+
+    
+
+    if externalClimatology: # Use external climatology
+        Ndays = len(externalClimatology['thresh'])
+        if Ndays ==366:
+            thresh_climYear = externalClimatology['thresh']
+            seas_climYear = externalClimatology['seas']
+
+        elif Ndays == 365:
+            thresh_climYear[:feb29] = externalClimatology['thresh'][:feb29]
+            thresh_climYear[feb29+1:] = externalClimatology['thresh'][feb29:]
+            seas_climYear[:feb29] = externalClimatology['seas'][:feb29]
+            seas_climYear[feb29+1:] = externalClimatology['seas'][feb29:]
+            thresh_climYear[feb29] = 0.5*thresh_climYear[feb28] + 0.5*thresh_climYear[feb29+1]
+            seas_climYear[feb29] = 0.5*seas_climYear[feb28] + 0.5*seas_climYear[feb29+1]
+        else:
+            raise ValueError('External climatology must have 365 or 366 days')
+
+    else: # Calculate climatology from temperature time series (original way)
+        # Loop over all day-of-year values, and calculate threshold and seasonal climatology across years
+        for d in range(1,lenClimYear+1):
+            # Special case for Feb 29
+            if d == feb29:
+                continue
+            # find all indices for each day of the year +/- windowHalfWidth and from them calculate the threshold
+            tt0 = np.where(doyClim[clim_start:clim_end+1] == d)[0] 
+            # If this doy value does not exist (i.e. in 360-day calendars) then skip it
+            if len(tt0) == 0:
+                continue
+            tt = np.array([])
+            for w in range(-windowHalfWidth, windowHalfWidth+1):
+                tt = np.append(tt, clim_start+tt0 + w)
+            tt = tt[tt>=0] # Reject indices "before" the first element
+            tt = tt[tt<TClim] # Reject indices "after" the last element
+            thresh_climYear[d-1] = np.nanpercentile(tempClim[tt.astype(int)], pctile)
+            seas_climYear[d-1] = np.nanmean(tempClim[tt.astype(int)])
         # Special case for Feb 29
-        if d == feb29:
-            continue
-        # find all indices for each day of the year +/- windowHalfWidth and from them calculate the threshold
-        tt0 = np.where(doyClim[clim_start:clim_end+1] == d)[0] 
-        # If this doy value does not exist (i.e. in 360-day calendars) then skip it
-        if len(tt0) == 0:
-            continue
-        tt = np.array([])
-        for w in range(-windowHalfWidth, windowHalfWidth+1):
-            tt = np.append(tt, clim_start+tt0 + w)
-        tt = tt[tt>=0] # Reject indices "before" the first element
-        tt = tt[tt<TClim] # Reject indices "after" the last element
-        thresh_climYear[d-1] = np.nanpercentile(tempClim[tt.astype(int)], pctile)
-        seas_climYear[d-1] = np.nanmean(tempClim[tt.astype(int)])
-    # Special case for Feb 29
-    thresh_climYear[feb29-1] = 0.5*thresh_climYear[feb29-2] + 0.5*thresh_climYear[feb29]
-    seas_climYear[feb29-1] = 0.5*seas_climYear[feb29-2] + 0.5*seas_climYear[feb29]
+        thresh_climYear[feb29-1] = 0.5*thresh_climYear[feb29-2] + 0.5*thresh_climYear[feb29]
+        seas_climYear[feb29-1] = 0.5*seas_climYear[feb29-2] + 0.5*seas_climYear[feb29]
 
     # Smooth if desired
     if smoothPercentile:
